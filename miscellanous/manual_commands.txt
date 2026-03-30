@@ -1,0 +1,21 @@
+# Shell 1 - HelloID reader on /dev/ttyACM2
+stty -F /dev/ttyACM1 9600 cs8 -cstopb -parenb
+cat /dev/ttyACM1
+
+# Shell 2 - RFIDEAs keyboard events
+ls -l /dev/input/by-id
+ls -l /dev/input/event*
+# pick event node (e.g. /dev/input/eventX)
+getevent -l /dev/input/eventX
+# alternatively:
+showkey -a
+
+# Shell 3 - Flipper on /dev/ttyACM1
+stty -F /dev/ttyACM1 230400 cs8 -cstopb -parenb
+printf 'rfid emulate EM4100/32 12D6337B34\r\n' > /dev/ttyACM1
+
+# Optional bulk emulation test
+for X in 7B34 7B37 7B3A; do
+  printf "rfid emulate EM4100/32 12D6337$X\r\n" > /dev/ttyACM1
+  sleep 1
+done

@@ -1,0 +1,5 @@
+pyserial>=3.5
+openpyxl
+filelock>=3.12.0
+pynput>=1.7.6
+hidapi>=0.13.0
