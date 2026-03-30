@@ -10,20 +10,20 @@ from serial.tools import list_ports
 
 # --- CARD CONFIGURATION ---
 NUM_CARDS = 1000000
-START_VALUE = 0x040C44
+START_VALUE = 0x040C06
 STEP_SIZE   = 0x000002
 KEY_TYPE = "EM4100/32"
 UID_LENGTH = 10
 
 # --- TIMING CONFIGURATION ---
-EMULATION_DELAY = 1.0
+EMULATION_DELAY = 0.5
 QUEUE_CLEAR_DELAY = 0.2
 POST_READ_DELAY = 0.2
-STOP_EMULATION_DELAY = 0.3
-DELAY_BETWEEN_CARDS = 0.05
+STOP_EMULATION_DELAY = 0.2
+DELAY_BETWEEN_CARDS = 0.1
 
 MAX_EMULATION_RETRIES = 4
-TOTAL_READER_TIMEOUT = 7.0
+TOTAL_READER_TIMEOUT = 6.0
 POLL_INTERVAL = 0.5
 RFIDEAS_TIMEOUT = 1.0
 RESET_INTERVAL = 30
@@ -166,7 +166,7 @@ def log_to_excel(nr, emulated, helloid, converted, rfideas, compare_result):
         try:
             wb = load_workbook(EXCEL_FILE)
             ws = wb.active
-        except FileNotFoundError:
+        except Exception:
             wb = Workbook()
             ws = wb.active
             ws.append(["Nr", "Emulated UID", "HelloID", "Converted HelloID", "RFIDEAs", "Compare"])
@@ -184,8 +184,10 @@ def log_to_excel(nr, emulated, helloid, converted, rfideas, compare_result):
                     pass
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
-        
-        wb.save(EXCEL_FILE)
+        try:
+            wb.save(EXCEL_FILE)
+        except Exception as e:
+            print(f"Error saving Excel file: {e}")
 
 def send_flipper_command(key_data):
     key_type = KEY_TYPE
@@ -195,7 +197,6 @@ def send_flipper_command(key_data):
 
 def stop_flipper_emulation():
     """Send Ctrl+C to stop emulation"""
-    time.sleep(STOP_EMULATION_DELAY)
     flipper.write(b"\x03")  # ASCII: Ctrl+C
     time.sleep(STOP_EMULATION_DELAY)
 
@@ -397,27 +398,30 @@ def main():
 
 # --- MAIN ---
 if __name__ == "__main__":
-    threading.Thread(target=reader_thread, daemon=True).start()
-    threading.Thread(target=keyboard_listener_thread, daemon=True).start()
-    time.sleep(1)
-    main()
-    print("\nAll cards emulated and logged to:", EXCEL_FILE)
-   
-    # Send Ctrl+C to interrupt the keyboard listener
     try:
-        controller = pynput_keyboard.Controller()
-        controller.press(pynput_keyboard.Key.ctrl)
-        controller.press('c')
-        controller.release('c')
-        controller.release(pynput_keyboard.Key.ctrl)
+        threading.Thread(target=reader_thread, daemon=True).start()
+        threading.Thread(target=keyboard_listener_thread, daemon=True).start()
+        time.sleep(1)
+        main()
+        print("\nAll cards emulated and logged to:", EXCEL_FILE)
+    
+        # Send Ctrl+C to interrupt the keyboard listener
+        try:
+            controller = pynput_keyboard.Controller()
+            controller.press(pynput_keyboard.Key.ctrl)
+            controller.press('c')
+            controller.release('c')
+            controller.release(pynput_keyboard.Key.ctrl)
+            time.sleep(0.1)
+        except:
+            pass
+        
+        # Signal listener to stop and try to stop it gracefully
+        stop_event.set()
+        if keyboard_listener:
+            keyboard_listener.stop()
         time.sleep(0.1)
-    except:
-        pass
-    
-    # Signal listener to stop and try to stop it gracefully
-    stop_event.set()
-    if keyboard_listener:
-        keyboard_listener.stop()
-    time.sleep(0.1)
-    exit(0)
-    
+        exit(0)
+        
+    except KeyboardInterrupt:
+        print("\nInterrupted by user (Ctrl+C)")   
