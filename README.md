@@ -1,4 +1,4 @@
-# Card Emulator (emulator.py)
+# Card Emulator
 
 A small utility to emulate HID/RFID cards using a Flipper Zero (via serial), read back with a HelloID reader (serial), and verify readings from an RFIDEAs HID keyboard device. Logs results to an Excel file (`emulator_log.xlsx`).
 
