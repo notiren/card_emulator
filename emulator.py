@@ -283,14 +283,6 @@ def keyboard_listener_thread():
     keyboard_listener.start()
     keyboard_listener.join()
 
-# --- GENERATE EMULATED CARDS ---
-emulated_cards = []
-for num in generate_24bit_numbers(step=STEP_SIZE):
-    euid = f"00000012D6{num:06X}"
-    emulated_cards.append(euid)
-    if len(emulated_cards) >= NUM_CARDS:
-        break
-
 # --- MAIN LOOP ---
 def load_keys_from_excel(path):
     """Load keys from the first column of an Excel file.
