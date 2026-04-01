@@ -18,11 +18,11 @@ KEY_TYPE = "EM4100/32"
 UID_LENGTH = 10
 
 # --- TIMING CONFIGURATION ---
-EMULATION_DELAY = 0.5
 QUEUE_CLEAR_DELAY = 0.2
-POST_READ_DELAY = 0.2
+EMULATION_DELAY = 0.5
 STOP_EMULATION_DELAY = 0.2
-DELAY_BETWEEN_CARDS = 0.1
+POST_EMULATION_DELAY = 0.5
+DELAY_BETWEEN_CARDS = 1.0
 
 MAX_EMULATION_RETRIES = 5
 TOTAL_READER_TIMEOUT = 6.0
@@ -380,6 +380,8 @@ def main(key_list_path=None):
                 break
 
             print(f"Retrying... (attempt {attempt+1})")
+
+        time.sleep(POST_EMULATION_DELAY)  # Allow time for RFIDEAs to detect after emulation stops
 
         # Wait for keyboard/RFIDEAs input
         rfideas_read = ""
