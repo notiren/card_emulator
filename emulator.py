@@ -34,8 +34,6 @@ RESET_INTERVAL = 30
 EXCEL_FILE = "emulator_log.xlsx"
 LOCK_FILE = EXCEL_FILE + ".lock"
 
-print("Starting emulator...")
-
 # --- PORT DETECTION FUNCTIONS ---
 def find_port_by_vid_pid(vid, pid):
     """Find serial port by VID and PID"""
@@ -67,8 +65,7 @@ def check_flipper_device():
         print(f"✓ Flipper initialized on {flipper_port}")
         return flipper
     except Exception as e:
-        print(f"✗ Error initializing Flipper: {e}")
-        exit(1)
+        raise RuntimeError(f"✗ Error initializing Flipper: {e}")
 
 def check_reader_device():
     """Check and initialize helloID Reader device"""
@@ -86,8 +83,7 @@ def check_reader_device():
         print(f"✓ Reader initialized on {reader_port}")
         return reader
     except Exception as e:
-        print(f"✗ Error initializing Reader: {e}")
-        exit(1)
+        raise RuntimeError(f"✗ Error initializing Reader: {e}")
 
 def check_rfideas_device():
     """Check and initialize RFIDEAs HID device (vendor_id 0x0c27)"""
@@ -105,16 +101,6 @@ def check_rfideas_device():
         print(f"✗ Error checking for RFIDEAs device: {e}")
         return None
 
-# --- SERIAL SETUP ---
-flipper = check_flipper_device()
-reader = check_reader_device()
-rfideas = check_rfideas_device()
-
-# --- QUEUES ---
-reader_queue = queue.Queue()
-keyboard_queue = queue.Queue()
-stop_event = threading.Event()
-keyboard_listener = None  
 
 # --- HELPER FUNCTIONS ---
 def generate_24bit_numbers(start=START_VALUE, step=STEP_SIZE):
@@ -142,7 +128,7 @@ def int24_to_hex6(value: int) -> str:
     value &= 0xFFFFFF
     
     return f"{value:06X}"
-    
+
 def clean_reader_line(line):
     """Extract UID from reader line. Keep only the last part after ':'"""
     if ':' in line:
@@ -161,35 +147,37 @@ def is_valid_uid(uid):
         return True
     except ValueError:
         return False
-
-def log_to_excel(nr, emulated, helloid, converted, rfideas, compare_result):
-    """Log a single row to Excel with all columns."""
-    with FileLock(LOCK_FILE):
-        try:
-            wb = load_workbook(EXCEL_FILE)
-            ws = wb.active
-        except Exception:
-            wb = Workbook()
-            ws = wb.active
-            ws.append(["Nr", "Emulated UID", "HelloID", "Converted HelloID", "RFIDEAs", "Compare"])
-        ws.append([nr, emulated, helloid, converted, rfideas, compare_result])
-        
-        # Auto-adjust column widths
-        for column in ws.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
-            for cell in column:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except:
-                    pass
-            adjusted_width = min(max_length + 2, 50)
-            ws.column_dimensions[column_letter].width = adjusted_width
-        try:
-            wb.save(EXCEL_FILE)
-        except Exception as e:
-            print(f"Error saving Excel file: {e}")
+    
+def load_keys_from_excel(path):
+    """Load keys from the first column of an Excel file.
+    Extracts the last 6 hex characters from each cell and
+    formats them as emulated EUIDs using the existing prefix.
+    """
+    keys = []
+    try:
+        wb = load_workbook(path, data_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=1, max_col=1, values_only=True):
+            cell = row[0]
+            if not cell:
+                continue
+            s = str(cell).strip()
+            matches = re.findall(r"[0-9A-Fa-f]+", s)
+            if not matches:
+                continue
+            token = matches[-1]
+            if len(token) < 6:
+                continue
+            last6 = token[-6:]
+            try:
+                num = int(last6, 16)
+                euid = f"00000012D6{num:06X}"
+                keys.append(euid)
+            except ValueError:
+                continue
+    except Exception as e:
+        print(f"Error loading key list from Excel: {e}")
+    return keys
 
 def send_flipper_command(key_data):
     key_type = KEY_TYPE
@@ -223,6 +211,35 @@ def reset_flipper():
         print(f"✓ Flipper reset")
     except Exception as e:
         print(f"✗ Error resetting Flipper: {e}")
+
+def log_to_excel(nr, emulated, helloid, converted, rfideas, compare_result):
+    """Log a single row to Excel with all columns."""
+    with FileLock(LOCK_FILE):
+        try:
+            wb = load_workbook(EXCEL_FILE)
+            ws = wb.active
+        except Exception:
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["Nr", "Emulated UID", "HelloID", "Converted HelloID", "RFIDEAs", "Compare"])
+        ws.append([nr, emulated, helloid, converted, rfideas, compare_result])
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        try:
+            wb.save(EXCEL_FILE)
+        except Exception as e:
+            print(f"Error saving Excel file: {e}")
 
 # --- READER THREAD ---
 def reader_thread():
@@ -284,38 +301,6 @@ def keyboard_listener_thread():
     keyboard_listener.join()
 
 # --- MAIN LOOP ---
-def load_keys_from_excel(path):
-    """Load keys from the first column of an Excel file.
-    Extracts the last 6 hex characters from each cell and
-    formats them as emulated EUIDs using the existing prefix.
-    """
-    keys = []
-    try:
-        wb = load_workbook(path, data_only=True)
-        ws = wb.active
-        for row in ws.iter_rows(min_row=1, max_col=1, values_only=True):
-            cell = row[0]
-            if not cell:
-                continue
-            s = str(cell).strip()
-            matches = re.findall(r"[0-9A-Fa-f]+", s)
-            if not matches:
-                continue
-            token = matches[-1]
-            if len(token) < 6:
-                continue
-            last6 = token[-6:]
-            try:
-                num = int(last6, 16)
-                euid = f"00000012D6{num:06X}"
-                keys.append(euid)
-            except ValueError:
-                continue
-    except Exception as e:
-        print(f"Error loading key list from Excel: {e}")
-    return keys
-
-
 def main(key_list_path=None):
     # Determine starting Nr from Excel
     try:
@@ -335,20 +320,17 @@ def main(key_list_path=None):
     # Build emulated cards list (from Excel list if provided)
     emulated_cards = []
     if key_list_path:
-        loaded = load_keys_from_excel(key_list_path)
-        if loaded:
-            emulated_cards = loaded
+        emulated_cards = load_keys_from_excel(key_list_path)
+        if emulated_cards:
             print(f"✓ Loaded {len(emulated_cards)} keys from: {key_list_path}")
         else:
-            print(f"✗ No valid keys found in {key_list_path}; falling back to generated cards.")
+            print(f"✗ No valid keys found in {key_list_path}; generating fallback cards.")
 
-    # If no emulated cards yet, generate them as before
     if not emulated_cards:
-        for num in generate_24bit_numbers(step=STEP_SIZE):
-            euid = f"00000012D6{num:06X}"
-            emulated_cards.append(euid)
-            if len(emulated_cards) >= NUM_CARDS:
-                break
+        emulated_cards = [
+            f"00000012D6{num:06X}"
+            for num in generate_24bit_numbers(step=STEP_SIZE)
+        ][:NUM_CARDS]
 
     # Print headers
     print("\n")
@@ -442,6 +424,21 @@ def main(key_list_path=None):
 
 # --- MAIN ---
 if __name__ == "__main__":
+    print("Starting emulator...")
+
+    # --- SERIAL SETUP ---
+    global flipper, reader, rfideas
+    flipper = check_flipper_device()
+    reader = check_reader_device()
+    rfideas = check_rfideas_device()
+
+    # --- QUEUES ---
+    global reader_queue, keyboard_queue, stop_event, keyboard_listener
+    reader_queue = queue.Queue()
+    keyboard_queue = queue.Queue()
+    stop_event = threading.Event()
+    keyboard_listener = None
+
     parser = argparse.ArgumentParser(description="Card emulator: optionally load keys from Excel list")
     parser.add_argument('-list', '--list', dest='excel_list_path', help='Path to Excel file containing keys')
     args = parser.parse_args()
@@ -451,7 +448,7 @@ if __name__ == "__main__":
         time.sleep(1)
         main(args.excel_list_path)
         print("\nAll cards emulated and logged to:", EXCEL_FILE)
-    
+
         # Send Ctrl+C to interrupt the keyboard listener
         try:
             controller = pynput_keyboard.Controller()
@@ -462,13 +459,13 @@ if __name__ == "__main__":
             time.sleep(0.1)
         except:
             pass
-        
+
         # Signal listener to stop and try to stop it gracefully
         stop_event.set()
         if keyboard_listener:
             keyboard_listener.stop()
         time.sleep(0.1)
         exit(0)
-        
+
     except KeyboardInterrupt:
         print("\nInterrupted by user (Ctrl+C)")   
