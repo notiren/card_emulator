@@ -45,7 +45,7 @@ The script will attempt to auto-detect Flipper and reader ports by VID/PID. If d
 You can provide a path to an Excel file containing key data (one key per row in the first column) using `-list`:
 
 ```powershell
-python -m emulator -list "C:\path\to\keys.xlsx"
+python emulator.py -list "C:\path\to\keys.xlsx"
 ```
 
 Behavior:
