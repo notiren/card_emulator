@@ -7,6 +7,8 @@ import queue
 from pynput import keyboard as pynput_keyboard
 import hid
 from serial.tools import list_ports
+import argparse
+import re
 
 # --- CARD CONFIGURATION ---
 NUM_CARDS = 1000000
@@ -22,7 +24,7 @@ POST_READ_DELAY = 0.2
 STOP_EMULATION_DELAY = 0.2
 DELAY_BETWEEN_CARDS = 0.1
 
-MAX_EMULATION_RETRIES = 4
+MAX_EMULATION_RETRIES = 5
 TOTAL_READER_TIMEOUT = 6.0
 POLL_INTERVAL = 0.5
 RFIDEAS_TIMEOUT = 1.0
@@ -290,7 +292,39 @@ for num in generate_24bit_numbers(step=STEP_SIZE):
         break
 
 # --- MAIN LOOP ---
-def main():
+def load_keys_from_excel(path):
+    """Load keys from the first column of an Excel file.
+    Extracts the last 6 hex characters from each cell and
+    formats them as emulated EUIDs using the existing prefix.
+    """
+    keys = []
+    try:
+        wb = load_workbook(path, data_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=1, max_col=1, values_only=True):
+            cell = row[0]
+            if not cell:
+                continue
+            s = str(cell).strip()
+            matches = re.findall(r"[0-9A-Fa-f]+", s)
+            if not matches:
+                continue
+            token = matches[-1]
+            if len(token) < 6:
+                continue
+            last6 = token[-6:]
+            try:
+                num = int(last6, 16)
+                euid = f"00000012D6{num:06X}"
+                keys.append(euid)
+            except ValueError:
+                continue
+    except Exception as e:
+        print(f"Error loading key list from Excel: {e}")
+    return keys
+
+
+def main(key_list_path=None):
     # Determine starting Nr from Excel
     try:
         wb = load_workbook(EXCEL_FILE)
@@ -305,6 +339,24 @@ def main():
         start_nr = 1
     except Exception:
         start_nr = 1
+
+    # Build emulated cards list (from Excel list if provided)
+    emulated_cards = []
+    if key_list_path:
+        loaded = load_keys_from_excel(key_list_path)
+        if loaded:
+            emulated_cards = loaded
+            print(f"✓ Loaded {len(emulated_cards)} keys from: {key_list_path}")
+        else:
+            print(f"✗ No valid keys found in {key_list_path}; falling back to generated cards.")
+
+    # If no emulated cards yet, generate them as before
+    if not emulated_cards:
+        for num in generate_24bit_numbers(step=STEP_SIZE):
+            euid = f"00000012D6{num:06X}"
+            emulated_cards.append(euid)
+            if len(emulated_cards) >= NUM_CARDS:
+                break
 
     # Print headers
     print("\n")
@@ -398,11 +450,14 @@ def main():
 
 # --- MAIN ---
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Card emulator: optionally load keys from Excel list")
+    parser.add_argument('-list', '--list', dest='excel_list_path', help='Path to Excel file containing keys')
+    args = parser.parse_args()
     try:
         threading.Thread(target=reader_thread, daemon=True).start()
         threading.Thread(target=keyboard_listener_thread, daemon=True).start()
         time.sleep(1)
-        main()
+        main(args.excel_list_path)
         print("\nAll cards emulated and logged to:", EXCEL_FILE)
     
         # Send Ctrl+C to interrupt the keyboard listener

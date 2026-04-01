@@ -40,6 +40,20 @@ python emulator.py
 
 The script will attempt to auto-detect Flipper and reader ports by VID/PID. If detection fails you'll be prompted to enter the COM port manually.
 
+**Excel key list input**
+
+You can provide a path to an Excel file containing key data (one key per row in the first column) using `-list`:
+
+```powershell
+python -m emulator -list "C:\path\to\keys.xlsx"
+```
+
+Behavior:
+- Reads values from column A (first column) in the first worksheet.
+- Each value can be an exact UID string or any text containing at least 6 hex digits.
+- The last 6 hex digits are extracted and concatenated with the prefix `00000012D6` to create the 8-byte emulation UID.
+- If no valid values are found, falls back to default generated sequential cards (existing behavior).
+
 **Configuration**
 At the top of `emulator.py` you can change constants to control behavior:
 - `NUM_CARDS` — how many cards to emulate
